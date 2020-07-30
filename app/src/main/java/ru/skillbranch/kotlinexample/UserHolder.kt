@@ -21,7 +21,7 @@ object UserHolder {
 
 
     fun registerUserByPhone(fullName: String, rawPhone: String): User {
-        val regex = """\+(\d){11}""".toRegex()
+        val regex = """\+(.*\d){11}""".toRegex()
         if (!regex.matches(rawPhone)) {
             throw IllegalArgumentException("Enter a valid phone number starting with a + and containing 11 digits")
         }
