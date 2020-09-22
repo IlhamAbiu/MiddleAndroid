@@ -12,39 +12,47 @@ object UserHolder {
         email: String,
         password: String
     ): User {
-        return User.makeUser(fullName, email = email, password = password)
-            .also { user ->
-                if (map[user.login] == null) map[user.login] =
-                    user else throw IllegalArgumentException("A user with this email already exists")
+        User.makeUser(fullName, email = email, password = password)
+            .let {
+                require(!map.containsKey(it.login)) { "A user with this email already exists" }
+                map[it.login] = it
+                return it
             }
     }
 
 
-    fun registerUserByPhone(fullName: String, rawPhone: String): User {
-        val regex = """\+(.*\d){11}""".toRegex()
-        if (!regex.matches(rawPhone)) {
-            throw IllegalArgumentException("Enter a valid phone number starting with a + and containing 11 digits")
-        }
-        return User.makeUser(fullName, rawPhone)
-            .also { user ->
-                if (map[rawPhone] == null) map[rawPhone] = user
-                else throw  IllegalArgumentException("A user with this phone already exists")
+    fun registerUserByPhone(
+        fullName: String,
+        rawPhone: String
+    ): User {
+        User.makeUser(fullName, phone = rawPhone)
+            .let {
+                require(!map.containsKey(rawPhone.normalizePhone())) { "A user with this phone already exists" }
+                map[rawPhone.normalizePhone()] = it
+                return it
             }
+    }
+
+    private fun String.normalizePhone(): String = this.replace("""[^\d+]""".toRegex(), "")
+
+    fun requestAccessCode(login: String): Unit? {
+        return map[login.normalizePhone()]?.run {
+            requestAccessCode()
+        }
     }
 
 
     fun loginUser(login: String, password: String): String? {
-        return map[login.trim()]?.run {
-            if (checkPassword(password)) this.userInfo
-            else null
+        val key = if (login.contains('@')) login else login.normalizePhone()
+        return map[key]?.let {
+            if (it.checkPassword(password)) {
+                it.userInfo
+            } else {
+                null
+            }
         }
     }
 
-    fun requestAccessCode(login: String): Unit {
-        map[login.trim()]?.let {
-            if (it.accessCode != null) it.changePassword(it.accessCode!!, it.generatorAccessCode())
-        }
-    }
 
     @VisibleForTesting(otherwise = VisibleForTesting.NONE)
     fun clearHolder() {

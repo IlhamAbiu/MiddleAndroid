@@ -4,6 +4,7 @@ import androidx.annotation.VisibleForTesting
 import java.lang.IllegalArgumentException
 import java.math.BigInteger
 import java.security.MessageDigest
+import java.security.SecureRandom
 
 class User private constructor(
     private val firstName: String,
@@ -26,21 +27,24 @@ class User private constructor(
 
     private var phone: String? = null
         set(value) {
-            field = value?.replace("""[^+\\d]""".toRegex(), "")
+            field = value?.replace("[^+\\d]".toRegex(), "")
         }
 
     private var _login: String? = null
+
     internal var login: String
         set(value) {
             _login = value?.toLowerCase()
         }
         get() = _login!!
 
-    private val salt: String? = null
 
-    //            by lazy {
-//        ByteArray(16).also { SecureRandom().nextBytes(it) }.toString()
-//    }
+    private val _salt: String by lazy {
+        ByteArray(16).also { SecureRandom().nextBytes(it) }.toString()
+    }
+
+    private var salt: String = _salt
+
     private lateinit var passwordHash: String
 
     @VisibleForTesting(otherwise = VisibleForTesting.NONE)
@@ -53,10 +57,9 @@ class User private constructor(
         email: String,
         password: String
     ) : this(firstName, lastName, email = email, meta = mapOf("auth" to "password")) {
-        println("Secondary mail constructor")
+        println("Secondary email constructor")
         passwordHash = encrypt(password)
     }
-
 
     //for phone
     constructor(
@@ -65,44 +68,45 @@ class User private constructor(
         rawPhone: String
     ) : this(firstName, lastName, rawPhone = rawPhone, meta = mapOf("auth" to "sms")) {
         println("Secondary phone constructor")
-        val code = generatorAccessCode()
-        passwordHash = encrypt(code)
-        println("Phone passwordHash is $passwordHash")
-        accessCode = code
-        sendAccessCodeToUser(rawPhone, code)
+        require(rawPhone.isPhoneValid()) { "Enter a valid phone number starting with a + and containing 11 digits" }
+        requestAccessCode()
+
     }
 
 
+
     init {
-        println("First init block, primary constructor  was called")
+        println("First init block, primary constructor was called")
 
-        check(firstName.isNotBlank()) { "FirstName must be not blank" }
-        check(!email.isNullOrBlank() || !rawPhone.isNullOrBlank()) { "Email or phone must be not blank" }
+        check(!firstName.isBlank()) { "First name must be not blank" }
+        check(email.isNullOrBlank() || rawPhone.isNullOrBlank()) { "Email or phone must be not blank" }
 
-        phone = rawPhone
-        login = email ?: phone!!
-
-
-
+        phone = if (rawPhone.isNullOrBlank()) null else rawPhone
+        login = if (email.isNullOrEmpty()) phone!! else email
         userInfo = """
             firstName: $firstName
             lastName: $lastName
             login: $login
             fullName: $fullName
             initials: $initials
-            email: $email
+            email: ${if (email.isNullOrEmpty()) null else email}
             phone: $phone
             meta: $meta
         """.trimIndent()
     }
 
-    fun checkPassword(pass: String) = encrypt(pass) == passwordHash
+    fun checkPassword(pass: String): Boolean = encrypt(pass) == passwordHash
+
     fun changePassword(oldPass: String, newPass: String) {
         if (checkPassword(oldPass)) passwordHash = encrypt(newPass)
-        else throw IllegalArgumentException("The entered pass does not match the current password")
+        else throw IllegalArgumentException("The entered password does not match the current password")
     }
 
-    fun generatorAccessCode(): String {
+    private fun String.isPhoneValid(): Boolean = Regex("""\+(\d[^\w]*){11}""").matches(this)
+
+    private fun encrypt(password: String): String = salt.plus(password).md5()
+
+    private fun generateAccessCode(): String {
         val possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
         return StringBuilder().apply {
             repeat(6) {
@@ -113,11 +117,17 @@ class User private constructor(
         }.toString()
     }
 
-    private fun sendAccessCodeToUser(phone: String, code: String) {
-        println(".....sending access code: $code on $phone")
+    private fun sendAccessCodeToUser(phone: String?, code: String) {
+        println("....  sending access code: $code on $phone")
     }
 
-    private fun encrypt(password: String): String = salt.plus(password).md5()
+    fun requestAccessCode() {
+        val code = generateAccessCode()
+        passwordHash = encrypt(code)
+        accessCode = code
+        sendAccessCodeToUser(phone, code)
+    }
+
     private fun String.md5(): String {
         val md = MessageDigest.getInstance("MD5")
         val digest = md.digest(toByteArray())
@@ -153,13 +163,13 @@ class User private constructor(
                         1 -> first() to null
                         2 -> first() to last()
                         else -> throw IllegalArgumentException(
-                            "Full name must contain only first name and last name," +
-                                    " current split result $this"
+                            "Fullname must contain only first name " +
+                                    "and last name, current split result: ${this@fullNameToPair}"
                         )
                     }
                 }
         }
+
     }
+
 }
-
-
